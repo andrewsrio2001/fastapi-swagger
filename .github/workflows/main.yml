@@ -45,7 +45,7 @@ jobs:
           path: test-results/test-results.xml
 
   build-and-push:
-    name: Build and Push Docker Image
+    name: Build and Push Docker Image to Two ECR Repositories
     runs-on: ubuntu-latest
     needs: run-tests
 
@@ -64,11 +64,19 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Docker Image to fastapi-swagger and cloudwatch
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: fastapi-swagger
+          APP_REPO: fastapi-swagger
+          LOG_REPO: cloudwatch
           IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # Build once
+          docker build -t $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG .
+
+          # Tag again for second repo
+          docker tag $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
+
+          # Push to both
+          docker push $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
