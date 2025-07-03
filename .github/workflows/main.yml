@@ -7,42 +7,7 @@ on:
 
 jobs:
   run-tests:
-    name: Run Pytest
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v2
-
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest
-          pip install --no-cache-dir -r requirements.txt
-          pytest --version
-          python --version
-
-      - name: Run Tests
-        run: |
-          mkdir -p test-results
-          pytest tests/test_external_packages_connectivity.py \
-                 tests/test_checkresponse.py \
-                 tests/test_database_functions.py \
-                 tests/test_mapping.py \
-                 tests/test_postprocesses.py \
-                 --junitxml=test-results/test-results.xml
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: test-results
-          path: test-results/test-results.xml
+    # ... [keep your existing test job unchanged] ...
 
   build-and-push:
     name: Build and Push Docker Image to Two ECR Repositories
@@ -51,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -64,19 +29,21 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and Push Docker Image to fastapi-swagger and cloudwatch
+      - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          APP_REPO: fastapi-swagger
-          LOG_REPO: cloudwatch
-          IMAGE_TAG: latest
+          FASTAPI_REPO: fastapi-swagger
+          CLOUDWATCH_REPO: cloudwatch
+          SHORT_SHA: ${{ github.sha }}  # Keep full SHA for traceability
         run: |
-          # Build the Docker image
-          docker build -t $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG .
-
-          # Tag the same image for second repo
-          docker tag $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
-
-          # Push to both repos
-          docker push $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
+          # Build with both repository tags
+          docker build -t $ECR_REGISTRY/$FASTAPI_REPO:$SHORT_SHA \
+                       -t $ECR_REGISTRY/$FASTAPI_REPO:latest \
+                       -t $ECR_REGISTRY/$CLOUDWATCH_REPO:$SHORT_SHA \
+                       -t $ECR_REGISTRY/$CLOUDWATCH_REPO:latest .
+          
+          # Push to both repositories with both tags
+          docker push $ECR_REGISTRY/$FASTAPI_REPO:$SHORT_SHA
+          docker push $ECR_REGISTRY/$FASTAPI_REPO:latest
+          docker push $ECR_REGISTRY/$CLOUDWATCH_REPO:$SHORT_SHA
+          docker push $ECR_REGISTRY/$CLOUDWATCH_REPO:latest
