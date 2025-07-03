@@ -71,12 +71,12 @@ jobs:
           LOG_REPO: cloudwatch
           IMAGE_TAG: latest
         run: |
-          # Build once
+          # Build the Docker image
           docker build -t $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG .
 
-          # Tag again for second repo
+          # Tag the same image for second repo
           docker tag $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
 
-          # Push to both
+          # Push to both repos
           docker push $ECR_REGISTRY/$APP_REPO:$IMAGE_TAG
           docker push $ECR_REGISTRY/$LOG_REPO:$IMAGE_TAG
