@@ -11,20 +11,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: 📦 Install Dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt pytest
-          
-      - name: Run Tests
+
+      - name: 🧪 Run Tests
         run: |
           mkdir -p test-results
           pytest tests/ \
@@ -32,7 +32,7 @@ jobs:
             --cov=src \
             --cov-report=xml:coverage.xml
 
-      - name: Upload Test Results
+      - name: ⬆️ Upload Test Results
         uses: actions/upload-artifact@v3
         with:
           name: test-results
@@ -42,43 +42,56 @@ jobs:
 
   build-and-push:
     name: Build and Push to ECR
-    needs: run-tests  # Depends on test job
+    needs: run-tests
     runs-on: ubuntu-latest
 
+    env:
+      REPO_1: fastapi-swagger
+      REPO_2: cloudwatch
+      AWS_REGION: ap-southeast-1
+
     steps:
-      - name: Checkout Code
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1  # Update your region if needed
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: ecr-login
+      - name: 🔓 Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build Docker Image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          REPO_1: "fastapi-swagger"  # First ECR repo
-          REPO_2: "cloudwatch"       # Second ECR repo
-          TAG: ${{ github.sha }}     # Commit SHA as primary tag
+      - name: 🛠️ Build Docker Image
         run: |
-          # Build with multiple tags (SHA + latest for both repos)
-          docker build \
-            -t $ECR_REGISTRY/$REPO_1:$TAG \
-            -t $ECR_REGISTRY/$REPO_1:latest \
-            -t $ECR_REGISTRY/$REPO_2:$TAG \
-            -t $ECR_REGISTRY/$REPO_2:latest \
-            .
+          set -e  # Fail fast on errors
+          echo "Building Docker image..."
+          docker build -t $REPO_1 .
+          COMMIT_TAG=${{ github.sha }}
+          ECR_URI=591700125321.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          
+          echo "Tagging images for both repositories..."
+          docker tag $REPO_1:latest $ECR_URI/$REPO_1:$COMMIT_TAG
+          docker tag $REPO_1:latest $ECR_URI/$REPO_1:latest
+          docker tag $REPO_1:latest $ECR_URI/$REPO_2:$COMMIT_TAG
+          docker tag $REPO_1:latest $ECR_URI/$REPO_2:latest
 
-      - name: Push to ECR
+      - name: 🚀 Push Docker Images to ECR
         run: |
-          # Push all tags to both repositories
-          docker push $ECR_REGISTRY/$REPO_1:$TAG
-          docker push $ECR_REGISTRY/$REPO_1:latest
-          docker push $ECR_REGISTRY/$REPO_2:$TAG
-          docker push $ECR_REGISTRY/$REPO_2:latest
+          set -e
+          ECR_URI=591700125321.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          COMMIT_TAG=${{ github.sha }}
+
+          echo "Pushing to $REPO_1..."
+          docker push $ECR_URI/$REPO_1:$COMMIT_TAG
+          docker push $ECR_URI/$REPO_1:latest
+
+          echo "Pushing to $REPO_2..."
+          docker push $ECR_URI/$REPO_2:$COMMIT_TAG
+          docker push $ECR_URI/$REPO_2:latest
+
+      - name: ✅ Confirm Success
+        run: echo "✅ Image pushed to both ECR repositories successfully!"
