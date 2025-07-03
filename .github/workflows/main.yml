@@ -1,18 +1,49 @@
-name: CI/CD - Test and Deploy to ECR
+name: CI/CD - Build and Push to ECR
 
 on:
   push:
     branches:
-      - dev
+      - dev  # Trigger only on pushes to 'dev' branch
 
 jobs:
   run-tests:
-    # ... [keep your existing test job unchanged] ...
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt pytest
+          
+      - name: Run Tests
+        run: |
+          mkdir -p test-results
+          pytest tests/ \
+            --junitxml=test-results/results.xml \
+            --cov=src \
+            --cov-report=xml:coverage.xml
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            test-results/results.xml
+            coverage.xml
 
   build-and-push:
-    name: Build and Push Docker Image to Two ECR Repositories
+    name: Build and Push to ECR
+    needs: run-tests  # Depends on test job
     runs-on: ubuntu-latest
-    needs: run-tests
 
     steps:
       - name: Checkout Code
@@ -23,27 +54,31 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-southeast-1
+          aws-region: ap-southeast-1  # Update your region if needed
 
       - name: Login to Amazon ECR
-        id: login-ecr
+        id: ecr-login
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and Push Docker Image
+      - name: Build Docker Image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          FASTAPI_REPO: fastapi-swagger
-          CLOUDWATCH_REPO: cloudwatch
-          SHORT_SHA: ${{ github.sha }}  # Keep full SHA for traceability
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPO_1: "fastapi-swagger"  # First ECR repo
+          REPO_2: "cloudwatch"       # Second ECR repo
+          TAG: ${{ github.sha }}     # Commit SHA as primary tag
         run: |
-          # Build with both repository tags
-          docker build -t $ECR_REGISTRY/$FASTAPI_REPO:$SHORT_SHA \
-                       -t $ECR_REGISTRY/$FASTAPI_REPO:latest \
-                       -t $ECR_REGISTRY/$CLOUDWATCH_REPO:$SHORT_SHA \
-                       -t $ECR_REGISTRY/$CLOUDWATCH_REPO:latest .
-          
-          # Push to both repositories with both tags
-          docker push $ECR_REGISTRY/$FASTAPI_REPO:$SHORT_SHA
-          docker push $ECR_REGISTRY/$FASTAPI_REPO:latest
-          docker push $ECR_REGISTRY/$CLOUDWATCH_REPO:$SHORT_SHA
-          docker push $ECR_REGISTRY/$CLOUDWATCH_REPO:latest
+          # Build with multiple tags (SHA + latest for both repos)
+          docker build \
+            -t $ECR_REGISTRY/$REPO_1:$TAG \
+            -t $ECR_REGISTRY/$REPO_1:latest \
+            -t $ECR_REGISTRY/$REPO_2:$TAG \
+            -t $ECR_REGISTRY/$REPO_2:latest \
+            .
+
+      - name: Push to ECR
+        run: |
+          # Push all tags to both repositories
+          docker push $ECR_REGISTRY/$REPO_1:$TAG
+          docker push $ECR_REGISTRY/$REPO_1:latest
+          docker push $ECR_REGISTRY/$REPO_2:$TAG
+          docker push $ECR_REGISTRY/$REPO_2:latest
